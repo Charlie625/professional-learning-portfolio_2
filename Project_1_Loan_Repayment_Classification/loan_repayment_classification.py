@@ -120,15 +120,18 @@ def main() -> None:
     )
 
     numeric_transformer = Pipeline(
-        steps=[("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler()), ]
+        steps=[("imputer", SimpleImputer(strategy="median")), 
+               ("scaler", StandardScaler()), ]
     )
 
     categorical_transformer = Pipeline(
-        steps=[ ("imputer", SimpleImputer(strategy="most_frequent")), ("encoder", build_one_hot_encoder()), ]
+        steps=[ ("imputer", SimpleImputer(strategy="most_frequent")), 
+               ("encoder", build_one_hot_encoder()), ]
     )
 
     preprocessor = ColumnTransformer(
-        transformers=[ ("numeric", numeric_transformer, numeric_features),("categorical", categorical_transformer, categorical_features), ]
+        transformers=[ ("numeric", numeric_transformer, numeric_features),
+                      ("categorical", categorical_transformer, categorical_features), ]
     )
 
     models = {
