@@ -1,7 +1,6 @@
 # Professional Learning Reflection
 
 ## Overview
-
 This professional learning portfolio helped me connect technical learning with practical project work. Instead of only learning Python concepts separately, I used Python to complete two applied projects: a loan repayment classification project and a real estate market analysis project.
 
 These projects allowed me to practise programming, data preparation, analysis, visualisation, machine learning, debugging, and documentation. They also helped me understand how professional computing work should be organised and presented.
