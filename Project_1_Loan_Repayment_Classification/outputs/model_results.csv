@@ -1,0 +1,6 @@
+Model,Accuracy,Balanced Accuracy,Precision Macro,Recall Macro,F1 Macro,Precision Not Paid Back,Recall Not Paid Back,F1 Not Paid Back,Precision Paid Back,Recall Paid Back,F1 Paid Back
+Decision Tree,0.8817,0.7893,0.824,0.7893,0.8047,0.7359,0.6356,0.6821,0.9121,0.9431,0.9273
+Random Forest,0.8722,0.774,0.8076,0.774,0.7889,0.7092,0.6106,0.6562,0.9061,0.9375,0.9215
+Logistic Regression,0.8128,0.7865,0.7251,0.7865,0.7448,0.522,0.7427,0.6131,0.9282,0.8303,0.8765
+KNN,0.835,0.6172,0.7999,0.6172,0.643,0.7593,0.2545,0.3812,0.8404,0.9799,0.9048
+Dummy Baseline,0.8003,0.5,0.4001,0.5,0.4445,0.0,0.0,0.0,0.8003,1.0,0.8891

@@ -1,0 +1,23 @@
+Loan Repayment Classification Project Summary
+===========================================
+
+Dataset shape: (18000, 21)
+Target column: loan_paid_back
+Dropped columns: ['loan_paid_back', 'id']
+Numeric features: ['age', 'annual_income', 'monthly_income', 'debt_to_income_ratio', 'credit_score', 'loan_amount', 'interest_rate', 'loan_term', 'installment', 'num_of_open_accounts', 'total_credit_limit', 'current_balance', 'delinquency_history', 'num_of_delinquencies']
+Categorical features: ['gender', 'marital_status', 'education_level', 'employment_status', 'loan_purpose']
+Best model selected: Decision Tree
+
+Reason for evaluation method:
+The target classes are imbalanced, so accuracy alone may be misleading. For this reason, Macro F1 and Balanced Accuracy were used to compare models more fairly.
+
+Model comparison:
+              Model  Accuracy  Balanced Accuracy  Precision Macro  Recall Macro  F1 Macro  Precision Not Paid Back  Recall Not Paid Back  F1 Not Paid Back  Precision Paid Back  Recall Paid Back  F1 Paid Back
+      Decision Tree    0.8817             0.7893           0.8240        0.7893    0.8047                   0.7359                0.6356            0.6821               0.9121            0.9431        0.9273
+      Random Forest    0.8722             0.7740           0.8076        0.7740    0.7889                   0.7092                0.6106            0.6562               0.9061            0.9375        0.9215
+Logistic Regression    0.8128             0.7865           0.7251        0.7865    0.7448                   0.5220                0.7427            0.6131               0.9282            0.8303        0.8765
+                KNN    0.8350             0.6172           0.7999        0.6172    0.6430                   0.7593                0.2545            0.3812               0.8404            0.9799        0.9048
+     Dummy Baseline    0.8003             0.5000           0.4001        0.5000    0.4445                   0.0000                0.0000            0.0000               0.8003            1.0000        0.8891
+
+Reflection note:
+This project helped me practise a complete machine learning workflow, including data loading, preprocessing, train-test splitting, model training, evaluation, model comparison, and evidence generation.

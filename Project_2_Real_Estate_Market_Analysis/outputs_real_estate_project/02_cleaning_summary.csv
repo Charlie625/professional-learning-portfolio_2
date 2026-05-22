@@ -1,0 +1,6 @@
+step,row_count,percentage_of_raw
+Raw rows,106118,100.0
+Rows after dropping missing essential values,105324,99.25
+Rows after removing duplicated listing URLs,47066,44.35
+Rows after full cleaning and outlier filtering,46246,43.58
+Rows removed in total,59872,56.42

@@ -1,0 +1,23 @@
+Real Estate Market Analysis and Value Evaluation
+================================================
+
+Raw dataset shape: (106118, 12)
+Cleaned dataset shape: (46246, 20)
+
+Cleaning summary:
+                                          step  row_count  percentage_of_raw
+                                      Raw rows     106118             100.00
+  Rows after dropping missing essential values     105324              99.25
+   Rows after removing duplicated listing URLs      47066              44.35
+Rows after full cleaning and outlier filtering      46246              43.58
+                         Rows removed in total      59872              56.42
+
+Main findings:
+1. The total price distribution is right-skewed, meaning most listings are in lower and middle price ranges while fewer listings are very expensive.
+2. Total price is strongly related to unit price and moderately related to property area.
+3. City-level comparison shows clear differences in median unit price across cities.
+4. Price segment analysis shows that higher price groups do not only depend on area; location and unit price also influence value.
+5. Room type, orientation, building age, and city type provide useful ways to compare housing value patterns.
+
+Professional reflection:
+This project helped me practise data cleaning, feature extraction, descriptive analysis, grouped comparison, visualisation, and project documentation.

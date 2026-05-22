@@ -1,0 +1,13 @@
+column,data_type,missing_values,unique_values
+city,object,0,513
+address,object,1666,20237
+area,object,794,5892
+floor,object,2094,180
+name,object,554,26416
+price,object,554,2145
+province,object,0,31
+rooms,object,2082,75
+toward,object,878,10
+unit,object,554,14695
+year,object,48382,47
+origin_url,object,554,47186

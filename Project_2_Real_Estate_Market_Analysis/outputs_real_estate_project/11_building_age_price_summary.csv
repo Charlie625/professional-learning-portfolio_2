@@ -1,0 +1,7 @@
+building_age_group,listing_count,median_unit_price_yuan_m2,median_total_price_10k_yuan,median_building_age
+0-5 years,98,8497.5,85.0,5.0
+6-10 years,9382,9386.0,92.15,8.0
+11-20 years,11314,10778.0,114.0,13.0
+21-30 years,2123,11538.0,110.0,25.0
+31-50 years,308,14905.0,95.0,34.0
+51-120 years,1,20995.0,358.0,96.0
