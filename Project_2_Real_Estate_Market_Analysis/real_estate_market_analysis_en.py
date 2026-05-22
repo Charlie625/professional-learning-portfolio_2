@@ -355,7 +355,6 @@ essential_columns = [
 ]
 
 df_after_missing = df.dropna(subset=essential_columns).copy()
-
 if "origin_url" in df_after_missing.columns:
     df_after_duplicates = df_after_missing.drop_duplicates(subset=["origin_url"]).copy()
 else:
@@ -371,7 +370,6 @@ df_clean = df_after_duplicates[
 
 if df_clean.empty:
     raise ValueError("No rows remain after cleaning. Please check the cleaning rules or the input dataset.")
-
 
 # Important fix for your error:
 # Convert building_age into normal float values before using pd.cut.
