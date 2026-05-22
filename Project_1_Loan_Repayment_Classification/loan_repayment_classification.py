@@ -105,18 +105,11 @@ def main() -> None:
 
     X = df.drop(columns=columns_to_drop)
     y = df[TARGET_COLUMN]
-
-    numeric_features = X.select_dtypes(
-        include=["int64", "float64", "int32", "float32"]
-    ).columns.tolist()
-
-    categorical_features = X.select_dtypes(
-        include=["object", "string", "category"]
-    ).columns.tolist()
+    numeric_features = X.select_dtypes( include=["int64", "float64", "int32", "float32"] ).columns.tolist()
+    categorical_features = X.select_dtypes( include=["object", "string", "category"] ).columns.tolist()
 
     print("\nNumeric features:")
     print(numeric_features)
-
     print("\nCategorical features:")
     print(categorical_features)
 
@@ -127,24 +120,15 @@ def main() -> None:
     )
 
     numeric_transformer = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
-        ]
+        steps=[("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler()), ]
     )
 
     categorical_transformer = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", build_one_hot_encoder()),
-        ]
+        steps=[ ("imputer", SimpleImputer(strategy="most_frequent")), ("encoder", build_one_hot_encoder()), ]
     )
 
     preprocessor = ColumnTransformer(
-        transformers=[
-            ("numeric", numeric_transformer, numeric_features),
-            ("categorical", categorical_transformer, categorical_features),
-        ]
+        transformers=[ ("numeric", numeric_transformer, numeric_features),("categorical", categorical_transformer, categorical_features), ]
     )
 
     models = {
