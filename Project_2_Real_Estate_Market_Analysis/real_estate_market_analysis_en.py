@@ -1,612 +1,942 @@
-"""
-Real Estate Market Analysis and Value Evaluation
-
-This script cleans and analyses a real estate listing dataset. It produces
-CSV summaries, charts, and a written project summary as evidence for a
-professional learning portfolio.
-"""
-
-from pathlib import Path
+import os
 import re
 import warnings
+from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
+
+
+# ============================================================
+# Project Settings
+# ============================================================
 
 PROJECT_DIR = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
 DATA_FILE = PROJECT_DIR / "house_sales.csv"
 OUTPUT_DIR = PROJECT_DIR / "outputs_real_estate_project"
-CURRENT_YEAR = 2026
+
+CURRENT_YEAR = datetime.now().year
 
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-CITY_NAME_MAP = {
-    "北京": "Beijing",
-    "上海": "Shanghai",
-    "广州": "Guangzhou",
-    "深圳": "Shenzhen",
-    "杭州": "Hangzhou",
-    "南京": "Nanjing",
-    "苏州": "Suzhou",
-    "成都": "Chengdu",
-    "重庆": "Chongqing",
-    "武汉": "Wuhan",
-    "天津": "Tianjin",
-    "厦门": "Xiamen",
-    "福州": "Fuzhou",
-    "宁波": "Ningbo",
-    "无锡": "Wuxi",
-    "合肥": "Hefei",
-    "长沙": "Changsha",
-    "郑州": "Zhengzhou",
-    "西安": "Xi'an",
-    "青岛": "Qingdao",
-    "大连": "Dalian",
-    "三亚": "Sanya",
-    "佛山": "Foshan",
-    "东莞": "Dongguan",
-    "泉州": "Quanzhou",
-    "常州": "Changzhou",
-    "南通": "Nantong",
-    "温州": "Wenzhou",
-    "绍兴": "Shaoxing",
-    "金华": "Jinhua",
-    "嘉兴": "Jiaxing",
-    "台州": "Taizhou",
-    "永泰": "Yongtai",
-    "长乐": "Changle",
-    "连江": "Lianjiang",
-    "罗源": "Luoyuan",
-    "闽清": "Minqing",
-    "平潭": "Pingtan",
-    "镇海": "Zhenhai",
-    "建德": "Jiande",
-    "淳安": "Chun'an",
-    "乐清": "Yueqing",
-}
-
-MUNICIPALITIES = {"北京", "上海", "天津", "重庆"}
+plt.rcParams["font.sans-serif"] = [
+    "SimHei",
+    "Microsoft YaHei",
+    "Arial Unicode MS",
+    "DejaVu Sans"
+]
+plt.rcParams["axes.unicode_minus"] = False
 
 
-def find_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
-    """Return the first matching column name from a list of possible names."""
-    for name in candidates:
-        if name in df.columns:
-            return name
-    return None
+# ============================================================
+# Helper Functions
+# ============================================================
 
-
-def extract_first_number(value) -> float:
-    """Extract the first numeric value from a text field."""
+def clean_text(value):
     if pd.isna(value):
-        return np.nan
-    text = str(value).replace(",", "")
+        return ""
+    return str(value).strip()
+
+
+def extract_first_number(value):
+    text = clean_text(value).replace(",", "")
     match = re.search(r"\d+(?:\.\d+)?", text)
     if match:
         return float(match.group())
     return np.nan
 
 
-def extract_room_counts(value) -> tuple[float, float]:
-    """Extract bedroom and living room counts from Chinese room type text."""
-    if pd.isna(value):
-        return np.nan, np.nan
-    text = str(value)
-    match = re.search(r"(\d+)\s*室\s*(\d+)\s*厅", text)
-    if match:
-        return float(match.group(1)), float(match.group(2))
-    match = re.search(r"(\d+)\s*bedroom.*?(\d+)\s*living", text, flags=re.IGNORECASE)
-    if match:
-        return float(match.group(1)), float(match.group(2))
-    return np.nan, np.nan
+def parse_rooms(room_text):
+    text = clean_text(room_text)
+
+    bedroom_match = re.search(r"(\d+)\s*室", text)
+    living_room_match = re.search(r"(\d+)\s*厅", text)
+
+    bedrooms = float(bedroom_match.group(1)) if bedroom_match else np.nan
+    living_rooms = float(living_room_match.group(1)) if living_room_match else np.nan
+
+    return pd.Series([bedrooms, living_rooms])
 
 
-def extract_year(value) -> float:
-    """Extract a four-digit building year."""
-    if pd.isna(value):
-        return np.nan
-    text = str(value)
-    match = re.search(r"(19\d{2}|20\d{2})", text)
+def parse_build_year(year_text):
+    text = clean_text(year_text)
+    match = re.search(r"(19|20)\d{2}", text)
     if match:
-        year = int(match.group(1))
-        if 1900 <= year <= CURRENT_YEAR:
-            return float(year)
+        return float(match.group())
     return np.nan
 
 
-def simplify_orientation(value) -> str:
-    """Convert raw orientation text into a smaller set of English labels."""
-    if pd.isna(value):
+def parse_floor_level(floor_text):
+    text = clean_text(floor_text)
+
+    if "低" in text:
+        return "Low floor"
+    if "中" in text:
+        return "Middle floor"
+    if "高" in text:
+        return "High floor"
+    if "顶" in text:
+        return "Top floor"
+    if "底" in text:
+        return "Ground floor"
+
+    return "Unknown"
+
+
+def parse_total_floor(floor_text):
+    text = clean_text(floor_text)
+    match = re.search(r"共\s*(\d+)\s*层", text)
+
+    if match:
+        return float(match.group(1))
+
+    numbers = re.findall(r"\d+", text)
+    if numbers:
+        return float(numbers[-1])
+
+    return np.nan
+
+
+def normalise_orientation(toward_text):
+    text = clean_text(toward_text)
+
+    if text == "":
         return "Other/Unknown"
-    text = str(value)
-    if "南北" in text:
+
+    if "南北" in text or ("南" in text and "北" in text):
         return "South-North"
+    if "东西" in text or ("东" in text and "西" in text):
+        return "East-West"
     if "南" in text:
         return "South"
-    if "东" in text and "西" in text:
-        return "East-West"
+    if "北" in text:
+        return "North"
     if "东" in text:
         return "East"
     if "西" in text:
         return "West"
-    if "北" in text:
-        return "North"
+
     return "Other/Unknown"
 
 
-def create_room_type_label(bedrooms, living_rooms) -> str:
-    """Create an English room type label."""
+def make_room_type(row):
+    bedrooms = row["bedrooms"]
+    living_rooms = row["living_rooms"]
+
     if pd.isna(bedrooms) or pd.isna(living_rooms):
         return "Unknown"
+
     return f"{int(bedrooms)} bedrooms, {int(living_rooms)} living rooms"
 
 
-def save_bar_chart(series: pd.Series, title: str, xlabel: str, ylabel: str, filename: str, figsize=(10, 6)) -> None:
-    """Save a simple bar chart."""
-    plt.figure(figsize=figsize)
-    plt.bar(series.index.astype(str), series.values)
-    plt.title(title)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.xticks(rotation=35, ha="right")
-    plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / filename, dpi=300)
-    plt.close()
+def classify_city_type(city):
+    municipality_cities = ["北京", "上海", "天津", "重庆"]
+
+    if clean_text(city) in municipality_cities:
+        return "Municipality"
+    return "Non-municipality"
 
 
-def main() -> None:
-    print("=" * 70)
-    print("Real Estate Market Analysis and Value Evaluation")
-    print("=" * 70)
+def translate_city_name(city):
+    city_map = {
+        "北京": "Beijing",
+        "上海": "Shanghai",
+        "天津": "Tianjin",
+        "重庆": "Chongqing",
+        "南京": "Nanjing",
+        "苏州": "Suzhou",
+        "无锡": "Wuxi",
+        "常州": "Changzhou",
+        "南通": "Nantong",
+        "徐州": "Xuzhou",
+        "扬州": "Yangzhou",
+        "镇江": "Zhenjiang",
+        "盐城": "Yancheng",
+        "泰州": "Taizhou",
+        "宿迁": "Suqian",
+        "杭州": "Hangzhou",
+        "宁波": "Ningbo",
+        "温州": "Wenzhou",
+        "嘉兴": "Jiaxing",
+        "绍兴": "Shaoxing",
+        "金华": "Jinhua",
+        "福州": "Fuzhou",
+        "厦门": "Xiamen",
+        "泉州": "Quanzhou",
+        "漳州": "Zhangzhou",
+        "莆田": "Putian",
+        "三明": "Sanming",
+        "南平": "Nanping",
+        "龙岩": "Longyan",
+        "宁德": "Ningde",
+        "合肥": "Hefei",
+        "芜湖": "Wuhu",
+        "蚌埠": "Bengbu",
+        "淮南": "Huainan",
+        "淮北": "Huaibei",
+        "马鞍山": "Maanshan",
+        "安庆": "Anqing",
+        "黄山": "Huangshan",
+        "阜阳": "Fuyang",
+        "宿州": "Suzhou Anhui",
+        "滁州": "Chuzhou",
+        "六安": "Luan",
+        "亳州": "Bozhou",
+        "池州": "Chizhou",
+        "宣城": "Xuancheng",
+        "广州": "Guangzhou",
+        "深圳": "Shenzhen",
+        "佛山": "Foshan",
+        "东莞": "Dongguan",
+        "珠海": "Zhuhai",
+        "中山": "Zhongshan",
+        "成都": "Chengdu",
+        "武汉": "Wuhan",
+        "郑州": "Zhengzhou",
+        "长沙": "Changsha",
+        "西安": "Xi'an",
+        "济南": "Jinan",
+        "青岛": "Qingdao",
+        "沈阳": "Shenyang",
+        "大连": "Dalian",
+        "昆明": "Kunming",
+        "南昌": "Nanchang",
+        "南宁": "Nanning",
+        "海口": "Haikou",
+        "三亚": "Sanya",
+        "平潭": "Pingtan",
+        "长乐": "Changle",
+        "连江": "Lianjiang",
+        "罗源": "Luoyuan",
+        "闽侯": "Minhou",
+        "闽清": "Minqing",
+        "永泰": "Yongtai",
+    }
 
-    if not DATA_FILE.exists():
-        raise FileNotFoundError(
-            "Cannot find house_sales.csv. Please place house_sales.csv in the same folder as this script."
-        )
+    city = clean_text(city)
+    return city_map.get(city, city)
 
-    df_raw = pd.read_csv(DATA_FILE)
 
-    print("\nRaw dataset shape:")
-    print(df_raw.shape)
+def save_table(dataframe, file_name):
+    dataframe.to_csv(OUTPUT_DIR / file_name, index=False, encoding="utf-8-sig")
 
-    print("\nFirst five rows:")
-    print(df_raw.head())
 
-    raw_overview = pd.DataFrame(
-        {
-            "column": df_raw.columns,
-            "data_type": df_raw.dtypes.astype(str).values,
-            "missing_values": df_raw.isna().sum().values,
-            "unique_values": df_raw.nunique(dropna=True).values,
-        }
-    )
-    raw_overview.to_csv(OUTPUT_DIR / "01_raw_dataset_overview.csv", index=False)
+def add_value_labels(ax):
+    for bar in ax.patches:
+        height = bar.get_height()
+        if pd.notna(height):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                height,
+                f"{height:.0f}",
+                ha="center",
+                va="bottom",
+                fontsize=8
+            )
 
-    city_col = find_column(df_raw, ["city", "城市"])
-    district_col = find_column(df_raw, ["district", "区域", "area_name"])
-    address_col = find_column(df_raw, ["address", "地址"])
-    area_col = find_column(df_raw, ["area", "建筑面积", "area_m2"])
-    total_price_col = find_column(df_raw, ["total_price", "price", "总价", "total_price_10k_yuan"])
-    unit_price_col = find_column(df_raw, ["unit_price", "unit", "单价", "unit_price_yuan_m2"])
-    room_col = find_column(df_raw, ["rooms", "house_type", "户型", "layout"])
-    floor_col = find_column(df_raw, ["floor", "楼层"])
-    year_col = find_column(df_raw, ["year", "building_year", "建造年份", "built_year"])
-    orientation_col = find_column(df_raw, ["orientation", "toward", "朝向"])
-    url_col = find_column(df_raw, ["origin_url", "url", "link"])
 
-    required_columns = [city_col, area_col, total_price_col, unit_price_col]
-    if any(col is None for col in required_columns):
-        raise ValueError(
-            "The dataset does not contain the required columns for city, area, total price, and unit price."
-        )
+def save_bar_chart(dataframe, x_col, y_col, title, x_label, y_label, file_name, rotation=30):
+    if dataframe.empty:
+        print(f"Skipped {file_name}: no data available.")
+        return
 
-    df = df_raw.copy()
-
-    for col in df.columns:
-        if pd.api.types.is_object_dtype(df[col]) or pd.api.types.is_string_dtype(df[col]):
-            df[col] = df[col].astype("string").str.strip()
-
-    df = df.dropna(subset=[city_col, area_col, total_price_col, unit_price_col])
-    rows_after_essential = len(df)
-
-    if url_col is not None:
-        df = df.drop_duplicates(subset=[url_col])
-    else:
-        df = df.drop_duplicates()
-    rows_after_duplicates = len(df)
-
-    df_clean = pd.DataFrame()
-    df_clean["city"] = df[city_col].astype(str)
-    df_clean["city_label"] = df_clean["city"].map(CITY_NAME_MAP).fillna(df_clean["city"])
-
-    if district_col is not None:
-        df_clean["district"] = df[district_col].astype(str)
-    else:
-        df_clean["district"] = "Unknown"
-
-    if address_col is not None:
-        df_clean["address"] = df[address_col].astype(str)
-    else:
-        df_clean["address"] = "Unknown"
-
-    df_clean["area_m2"] = df[area_col].apply(extract_first_number)
-    df_clean["total_price_10k_yuan"] = df[total_price_col].apply(extract_first_number)
-    df_clean["unit_price_yuan_m2"] = df[unit_price_col].apply(extract_first_number)
-
-    if room_col is not None:
-        room_counts = df[room_col].apply(extract_room_counts)
-        df_clean["bedrooms"] = room_counts.apply(lambda x: x[0])
-        df_clean["living_rooms"] = room_counts.apply(lambda x: x[1])
-        df_clean["room_type_raw"] = df[room_col].astype(str)
-    else:
-        df_clean["bedrooms"] = np.nan
-        df_clean["living_rooms"] = np.nan
-        df_clean["room_type_raw"] = "Unknown"
-
-    df_clean["room_type"] = df_clean.apply(
-        lambda row: create_room_type_label(row["bedrooms"], row["living_rooms"]), axis=1
-    )
-
-    if floor_col is not None:
-        df_clean["floor_raw"] = df[floor_col].astype(str)
-    else:
-        df_clean["floor_raw"] = "Unknown"
-
-    if orientation_col is not None:
-        df_clean["orientation_raw"] = df[orientation_col].astype(str)
-        df_clean["orientation_group"] = df[orientation_col].apply(simplify_orientation)
-    else:
-        df_clean["orientation_raw"] = "Unknown"
-        df_clean["orientation_group"] = "Other/Unknown"
-
-    if year_col is not None:
-        df_clean["building_year"] = df[year_col].apply(extract_year)
-    else:
-        df_clean["building_year"] = np.nan
-
-    df_clean["building_age"] = CURRENT_YEAR - df_clean["building_year"]
-    df_clean.loc[(df_clean["building_age"] < 0) | (df_clean["building_age"] > 120), "building_age"] = np.nan
-
-    if url_col is not None:
-        df_clean["origin_url"] = df[url_col].astype(str)
-    else:
-        df_clean["origin_url"] = "Unknown"
-
-    df_clean["city_type"] = np.where(df_clean["city"].isin(MUNICIPALITIES), "Municipality", "Non-municipality")
-
-    essential_numeric = ["area_m2", "total_price_10k_yuan", "unit_price_yuan_m2"]
-    df_clean = df_clean.dropna(subset=essential_numeric)
-
-    df_clean = df_clean[
-        (df_clean["area_m2"].between(20, 500))
-        & (df_clean["total_price_10k_yuan"].between(5, 1000))
-        & (df_clean["unit_price_yuan_m2"].between(500, 50000))
-    ]
-
-    df_clean = df_clean[
-        df_clean["bedrooms"].isna() | df_clean["bedrooms"].between(1, 10)
-    ]
-    df_clean = df_clean[
-        df_clean["living_rooms"].isna() | df_clean["living_rooms"].between(0, 12)
-    ]
-
-    df_clean["price_segment"] = pd.qcut(
-        df_clean["total_price_10k_yuan"],
-        q=4,
-        labels=["Low price", "Mid price", "High price", "Luxury"],
-        duplicates="drop",
-    )
-
-    age_bins = [0, 5, 10, 20, 30, 50, 120]
-    age_labels = ["0-5 years", "6-10 years", "11-20 years", "21-30 years", "31-50 years", "51-120 years"]
-    df_clean["building_age_group"] = pd.cut(
-        df_clean["building_age"].astype("float64"),
-        bins=age_bins,
-        labels=age_labels,
-        include_lowest=True,
-    )
-
-    rows_after_cleaning = len(df_clean)
-
-    cleaning_summary = pd.DataFrame(
-        {
-            "step": [
-                "Raw rows",
-                "Rows after dropping missing essential values",
-                "Rows after removing duplicated listing URLs",
-                "Rows after full cleaning and outlier filtering",
-                "Rows removed in total",
-            ],
-            "row_count": [
-                len(df_raw),
-                rows_after_essential,
-                rows_after_duplicates,
-                rows_after_cleaning,
-                len(df_raw) - rows_after_cleaning,
-            ],
-        }
-    )
-    cleaning_summary["percentage_of_raw"] = (cleaning_summary["row_count"] / len(df_raw) * 100).round(2)
-    cleaning_summary.to_csv(OUTPUT_DIR / "02_cleaning_summary.csv", index=False)
-
-    df_clean.to_csv(OUTPUT_DIR / "03_cleaned_house_sales.csv", index=False, encoding="utf-8-sig")
-
-    numeric_columns = [
-        "area_m2",
-        "total_price_10k_yuan",
-        "unit_price_yuan_m2",
-        "bedrooms",
-        "living_rooms",
-        "building_age",
-    ]
-    numeric_summary = df_clean[numeric_columns].describe().T.reset_index().rename(columns={"index": "variable"})
-    numeric_summary.to_csv(OUTPUT_DIR / "04_numeric_summary.csv", index=False)
-
-    correlation_matrix = df_clean[numeric_columns].corr(numeric_only=True)
-    correlation_matrix.to_csv(OUTPUT_DIR / "05_correlation_matrix.csv")
-
-    city_summary = (
-        df_clean.groupby(["city", "city_label"])
-        .agg(
-            listing_count=("city", "size"),
-            median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
-            mean_unit_price_yuan_m2=("unit_price_yuan_m2", "mean"),
-            median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
-            median_area_m2=("area_m2", "median"),
-        )
-        .reset_index()
-    )
-    city_summary = city_summary[city_summary["listing_count"] >= 20]
-    city_summary = city_summary.sort_values("median_unit_price_yuan_m2", ascending=False)
-    city_summary.to_csv(OUTPUT_DIR / "06_city_price_summary.csv", index=False, encoding="utf-8-sig")
-
-    price_segment_summary = (
-        df_clean.groupby("price_segment", observed=False)
-        .agg(
-            listing_count=("total_price_10k_yuan", "size"),
-            median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
-            median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
-            median_area_m2=("area_m2", "median"),
-            median_building_age=("building_age", "median"),
-        )
-        .reset_index()
-    )
-    price_segment_summary.to_csv(OUTPUT_DIR / "07_price_segment_summary.csv", index=False)
-
-    room_type_counts = df_clean["room_type"].value_counts().reset_index()
-    room_type_counts.columns = ["room_type", "listing_count"]
-    room_type_counts.to_csv(OUTPUT_DIR / "08_room_type_counts.csv", index=False)
-
-    room_type_price_summary = (
-        df_clean.groupby("room_type")
-        .agg(
-            listing_count=("room_type", "size"),
-            median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
-            median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
-            median_area_m2=("area_m2", "median"),
-        )
-        .reset_index()
-        .sort_values("median_unit_price_yuan_m2", ascending=False)
-    )
-    room_type_price_summary.to_csv(OUTPUT_DIR / "09_room_type_price_summary.csv", index=False)
-
-    orientation_summary = (
-        df_clean.groupby("orientation_group")
-        .agg(
-            listing_count=("orientation_group", "size"),
-            median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
-            median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
-        )
-        .reset_index()
-        .sort_values("median_unit_price_yuan_m2", ascending=False)
-    )
-    orientation_summary.to_csv(OUTPUT_DIR / "10_orientation_price_summary.csv", index=False)
-
-    building_age_summary = (
-        df_clean.dropna(subset=["building_age_group"])
-        .groupby("building_age_group", observed=False)
-        .agg(
-            listing_count=("building_age_group", "size"),
-            median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
-            median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
-            median_building_age=("building_age", "median"),
-        )
-        .reset_index()
-    )
-    building_age_summary.to_csv(OUTPUT_DIR / "11_building_age_price_summary.csv", index=False)
-
-    city_type_summary = (
-        df_clean.groupby("city_type")
-        .agg(
-            listing_count=("city_type", "size"),
-            median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
-            median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
-            median_area_m2=("area_m2", "median"),
-        )
-        .reset_index()
-    )
-    city_type_summary.to_csv(OUTPUT_DIR / "12_city_type_summary.csv", index=False)
-
-    print("\nCleaning summary:")
-    print(cleaning_summary)
-
-    print("\nCleaned dataset shape:")
-    print(df_clean.shape)
-
-    print("\nNumeric summary:")
-    print(numeric_summary)
-
-    print("\nTop 10 cities by median unit price:")
-    print(city_summary.head(10))
-
-    # Chart 1: correlation matrix
-    plt.figure(figsize=(8, 6))
-    matrix = correlation_matrix.values
-    plt.imshow(matrix, aspect="auto")
-    plt.colorbar(label="Correlation")
-    plt.xticks(range(len(correlation_matrix.columns)), correlation_matrix.columns, rotation=45, ha="right")
-    plt.yticks(range(len(correlation_matrix.index)), correlation_matrix.index)
-    for i in range(matrix.shape[0]):
-        for j in range(matrix.shape[1]):
-            value = matrix[i, j]
-            if not np.isnan(value):
-                plt.text(j, i, f"{value:.2f}", ha="center", va="center")
-    plt.title("Correlation Matrix of Key Housing Variables")
-    plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / "a1_correlation_matrix.png", dpi=300)
-    plt.close()
-
-    # Chart 2: total price distribution
     plt.figure(figsize=(10, 6))
-    plt.hist(df_clean["total_price_10k_yuan"], bins=50)
-    plt.title("Distribution of Total House Price")
-    plt.xlabel("Total price (10,000 yuan)")
-    plt.ylabel("Number of listings")
+    ax = plt.gca()
+    ax.bar(dataframe[x_col].astype(str), dataframe[y_col])
+    ax.set_title(title)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    plt.xticks(rotation=rotation, ha="right")
+    add_value_labels(ax)
     plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / "a2_total_price_distribution.png", dpi=300)
+    plt.savefig(OUTPUT_DIR / file_name, dpi=300)
     plt.close()
 
-    # Chart 3: unit price boxplot
-    plt.figure(figsize=(7, 5))
-    plt.boxplot(df_clean["unit_price_yuan_m2"].dropna())
-    plt.title("Boxplot of Unit Price")
-    plt.ylabel("Unit price (yuan/m²)")
-    plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / "a2_unit_price_boxplot.png", dpi=300)
-    plt.close()
 
-    # Chart 4: top cities by unit price
-    top_cities = city_summary.head(10).set_index("city_label")["median_unit_price_yuan_m2"]
-    save_bar_chart(
-        top_cities,
-        "Top 10 Cities by Median Unit Price",
-        "City",
-        "Median unit price (yuan/m²)",
-        "a3_top_city_unit_prices.png",
-        figsize=(10, 6),
+# ============================================================
+# 1. Load Dataset
+# ============================================================
+
+print("=" * 70)
+print("Real Estate Market Analysis and Value Evaluation")
+print("=" * 70)
+
+if not DATA_FILE.exists():
+    raise FileNotFoundError(
+        f"Cannot find {DATA_FILE.name}. Please place house_sales.csv in the same folder as this Python file."
     )
 
-    # Chart 5: price segment characteristics
-    area_by_segment = price_segment_summary.set_index("price_segment")["median_area_m2"]
-    save_bar_chart(
-        area_by_segment,
-        "Median Area by Price Segment",
-        "Price segment",
-        "Median area (m²)",
-        "a4_median_area_by_price_segment.png",
-        figsize=(9, 5),
+df_raw = pd.read_csv(DATA_FILE)
+
+print("\nRaw dataset shape:")
+print(df_raw.shape)
+
+print("\nFirst five rows:")
+print(df_raw.head())
+
+
+required_columns = [
+    "city",
+    "address",
+    "area",
+    "floor",
+    "name",
+    "price",
+    "province",
+    "rooms",
+    "toward",
+    "unit",
+    "year",
+    "origin_url"
+]
+
+missing_columns = [col for col in required_columns if col not in df_raw.columns]
+
+if missing_columns:
+    raise ValueError(f"The following required columns are missing: {missing_columns}")
+
+
+# ============================================================
+# 2. Raw Dataset Overview
+# ============================================================
+
+raw_overview = pd.DataFrame({
+    "column": df_raw.columns,
+    "data_type": [str(df_raw[col].dtype) for col in df_raw.columns],
+    "missing_values": [df_raw[col].isna().sum() for col in df_raw.columns],
+    "unique_values": [df_raw[col].nunique(dropna=True) for col in df_raw.columns]
+})
+
+save_table(raw_overview, "01_raw_dataset_overview.csv")
+
+
+# ============================================================
+# 3. Data Cleaning and Feature Engineering
+# ============================================================
+
+df = df_raw.copy()
+
+for col in df.columns:
+    if df[col].dtype == "object" or pd.api.types.is_string_dtype(df[col]):
+        df[col] = df[col].map(clean_text)
+
+df["area_m2"] = df["area"].map(extract_first_number)
+df["total_price_10k_yuan"] = df["price"].map(extract_first_number)
+df["unit_price_yuan_m2"] = df["unit"].map(extract_first_number)
+
+df[["bedrooms", "living_rooms"]] = df["rooms"].apply(parse_rooms)
+
+df["build_year"] = df["year"].map(parse_build_year)
+df["building_age"] = CURRENT_YEAR - df["build_year"]
+
+df["floor_level"] = df["floor"].map(parse_floor_level)
+df["total_floors"] = df["floor"].map(parse_total_floor)
+
+df["orientation_group"] = df["toward"].map(normalise_orientation)
+df["room_type"] = df.apply(make_room_type, axis=1)
+df["city_type"] = df["city"].map(classify_city_type)
+df["city_label"] = df["city"].map(translate_city_name)
+
+
+essential_columns = [
+    "city",
+    "province",
+    "area_m2",
+    "total_price_10k_yuan",
+    "unit_price_yuan_m2",
+    "bedrooms",
+    "living_rooms"
+]
+
+df_after_missing = df.dropna(subset=essential_columns).copy()
+
+if "origin_url" in df_after_missing.columns:
+    df_after_duplicates = df_after_missing.drop_duplicates(subset=["origin_url"]).copy()
+else:
+    df_after_duplicates = df_after_missing.drop_duplicates().copy()
+
+df_clean = df_after_duplicates[
+    (df_after_duplicates["area_m2"].between(10, 500)) &
+    (df_after_duplicates["total_price_10k_yuan"].between(1, 1000)) &
+    (df_after_duplicates["unit_price_yuan_m2"].between(500, 50000)) &
+    (df_after_duplicates["bedrooms"].between(0, 10)) &
+    (df_after_duplicates["living_rooms"].between(0, 12))
+].copy()
+
+if df_clean.empty:
+    raise ValueError("No rows remain after cleaning. Please check the cleaning rules or the input dataset.")
+
+
+# Important fix for your error:
+# Convert building_age into normal float values before using pd.cut.
+df_clean["building_age"] = pd.to_numeric(
+    df_clean["building_age"],
+    errors="coerce"
+).astype("float64")
+
+
+building_age_bins = [-np.inf, 5, 10, 20, 30, 50, np.inf]
+building_age_labels = [
+    "0-5 years",
+    "6-10 years",
+    "11-20 years",
+    "21-30 years",
+    "31-50 years",
+    "51+ years"
+]
+
+df_clean["building_age_group"] = pd.cut(
+    df_clean["building_age"],
+    bins=building_age_bins,
+    labels=building_age_labels,
+    include_lowest=True
+)
+
+df_clean["building_age_group"] = (
+    df_clean["building_age_group"]
+    .astype("object")
+    .fillna("Unknown")
+)
+
+
+area_bins = [0, 70, 90, 120, 150, 200, np.inf]
+area_labels = [
+    "0-70 m2",
+    "71-90 m2",
+    "91-120 m2",
+    "121-150 m2",
+    "151-200 m2",
+    "200+ m2"
+]
+
+df_clean["area_group"] = pd.cut(
+    df_clean["area_m2"],
+    bins=area_bins,
+    labels=area_labels,
+    include_lowest=True
+)
+
+
+price_q1 = df_clean["total_price_10k_yuan"].quantile(0.25)
+price_q2 = df_clean["total_price_10k_yuan"].quantile(0.50)
+price_q3 = df_clean["total_price_10k_yuan"].quantile(0.75)
+
+
+def classify_price_segment(value):
+    if pd.isna(value):
+        return "Unknown"
+    if value <= price_q1:
+        return "Low price"
+    if value <= price_q2:
+        return "Mid price"
+    if value <= price_q3:
+        return "High price"
+    return "Luxury"
+
+
+df_clean["price_segment"] = df_clean["total_price_10k_yuan"].map(classify_price_segment)
+
+
+cleaning_summary = pd.DataFrame({
+    "step": [
+        "Raw rows",
+        "Rows after dropping missing essential values",
+        "Rows after removing duplicated listing URLs",
+        "Rows after full cleaning and outlier filtering",
+        "Rows removed in total"
+    ],
+    "row_count": [
+        len(df_raw),
+        len(df_after_missing),
+        len(df_after_duplicates),
+        len(df_clean),
+        len(df_raw) - len(df_clean)
+    ]
+})
+
+cleaning_summary["percentage_of_raw"] = (
+    cleaning_summary["row_count"] / len(df_raw) * 100
+).round(2)
+
+save_table(cleaning_summary, "02_cleaning_summary.csv")
+df_clean.to_csv(OUTPUT_DIR / "03_cleaned_house_sales.csv", index=False, encoding="utf-8-sig")
+
+print("\nCleaning summary:")
+print(cleaning_summary)
+
+print("\nCleaned dataset shape:")
+print(df_clean.shape)
+
+
+# ============================================================
+# 4. Descriptive Statistics
+# ============================================================
+
+numeric_columns = [
+    "area_m2",
+    "total_price_10k_yuan",
+    "unit_price_yuan_m2",
+    "bedrooms",
+    "living_rooms",
+    "building_age"
+]
+
+numeric_summary = (
+    df_clean[numeric_columns]
+    .describe(percentiles=[0.25, 0.5, 0.75])
+    .T
+    .reset_index()
+    .rename(columns={"index": "variable"})
+)
+
+numeric_summary = numeric_summary.round(2)
+save_table(numeric_summary, "04_numeric_summary.csv")
+
+print("\nNumeric summary:")
+print(numeric_summary)
+
+
+# ============================================================
+# 5. Correlation Analysis
+# ============================================================
+
+correlation_columns = [
+    "area_m2",
+    "total_price_10k_yuan",
+    "unit_price_yuan_m2",
+    "bedrooms",
+    "living_rooms",
+    "building_age"
+]
+
+correlation_matrix = df_clean[correlation_columns].corr(numeric_only=True).round(3)
+correlation_matrix.to_csv(OUTPUT_DIR / "05_correlation_matrix.csv", encoding="utf-8-sig")
+
+plt.figure(figsize=(12, 9))
+ax = plt.gca()
+
+image = ax.imshow(correlation_matrix, vmin=-1, vmax=1)
+
+ax.set_xticks(range(len(correlation_matrix.columns)))
+ax.set_yticks(range(len(correlation_matrix.index)))
+ax.set_xticklabels(correlation_matrix.columns, rotation=45, ha="right")
+ax.set_yticklabels(correlation_matrix.index)
+
+for i in range(len(correlation_matrix.index)):
+    for j in range(len(correlation_matrix.columns)):
+        value = correlation_matrix.iloc[i, j]
+        ax.text(j, i, f"{value:.2f}", ha="center", va="center", fontsize=9)
+
+plt.colorbar(image, ax=ax, label="Correlation")
+plt.title("Correlation Matrix of Key Housing Variables")
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "a1_correlation_matrix.png", dpi=300)
+plt.close()
+
+
+# ============================================================
+# 6. Price Distribution and Outliers
+# ============================================================
+
+plt.figure(figsize=(10, 6))
+plt.hist(df_clean["total_price_10k_yuan"], bins=40)
+plt.title("Distribution of Total House Price")
+plt.xlabel("Total price (10,000 yuan)")
+plt.ylabel("Number of listings")
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "a2_total_price_distribution.png", dpi=300)
+plt.close()
+
+
+plt.figure(figsize=(8, 6))
+plt.boxplot(df_clean["unit_price_yuan_m2"].dropna())
+plt.title("Boxplot of Unit Price")
+plt.ylabel("Unit price (yuan/m2)")
+plt.tight_layout()
+plt.savefig(OUTPUT_DIR / "a2_unit_price_boxplot.png", dpi=300)
+plt.close()
+
+
+# ============================================================
+# 7. City Comparison
+# ============================================================
+
+city_price_summary = (
+    df_clean
+    .groupby(["city", "city_label", "province"], as_index=False)
+    .agg(
+        listing_count=("city", "size"),
+        median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
+        mean_unit_price_yuan_m2=("unit_price_yuan_m2", "mean"),
+        median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
+        median_area_m2=("area_m2", "median")
+    )
+)
+
+city_price_summary = city_price_summary.round(2)
+save_table(city_price_summary, "06_city_price_summary.csv")
+
+city_summary_for_chart = city_price_summary[
+    city_price_summary["listing_count"] >= 30
+].copy()
+
+top_city_unit_prices = (
+    city_summary_for_chart
+    .sort_values("median_unit_price_yuan_m2", ascending=False)
+    .head(10)
+)
+
+print("\nTop 10 cities by median unit price:")
+print(top_city_unit_prices)
+
+save_bar_chart(
+    top_city_unit_prices,
+    "city_label",
+    "median_unit_price_yuan_m2",
+    "Top 10 Cities by Median Unit Price",
+    "City",
+    "Median unit price (yuan/m2)",
+    "a3_top_city_unit_prices.png"
+)
+
+
+# ============================================================
+# 8. Price Segment Analysis
+# ============================================================
+
+price_segment_order = ["Low price", "Mid price", "High price", "Luxury"]
+
+price_segment_summary = (
+    df_clean
+    .groupby("price_segment", as_index=False)
+    .agg(
+        listing_count=("price_segment", "size"),
+        median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
+        median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
+        median_area_m2=("area_m2", "median"),
+        median_building_age=("building_age", "median"),
+        median_bedrooms=("bedrooms", "median")
+    )
+)
+
+price_segment_summary["price_segment"] = pd.Categorical(
+    price_segment_summary["price_segment"],
+    categories=price_segment_order,
+    ordered=True
+)
+
+price_segment_summary = (
+    price_segment_summary
+    .sort_values("price_segment")
+    .round(2)
+)
+
+save_table(price_segment_summary, "07_price_segment_summary.csv")
+
+
+save_bar_chart(
+    price_segment_summary,
+    "price_segment",
+    "median_area_m2",
+    "Median Area by Price Segment",
+    "Price segment",
+    "Median area (m2)",
+    "a4_median_area_by_price_segment.png"
+)
+
+age_segment_data = price_segment_summary.dropna(subset=["median_building_age"])
+
+save_bar_chart(
+    age_segment_data,
+    "price_segment",
+    "median_building_age",
+    "Median Building Age by Price Segment",
+    "Price segment",
+    "Median building age (years)",
+    "a4_building_age_by_price_segment.png"
+)
+
+
+# ============================================================
+# 9. Room Type Analysis
+# ============================================================
+
+room_type_counts = (
+    df_clean["room_type"]
+    .value_counts()
+    .reset_index()
+)
+
+room_type_counts.columns = ["room_type", "listing_count"]
+save_table(room_type_counts, "08_room_type_counts.csv")
+
+top_room_types = room_type_counts.head(10)
+
+save_bar_chart(
+    top_room_types,
+    "room_type",
+    "listing_count",
+    "Top 10 Room Types by Listing Count",
+    "Room type",
+    "Number of listings",
+    "a5_top_room_types.png",
+    rotation=35
+)
+
+
+room_type_price_summary = (
+    df_clean
+    .groupby("room_type", as_index=False)
+    .agg(
+        listing_count=("room_type", "size"),
+        median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
+        median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
+        median_area_m2=("area_m2", "median")
+    )
+)
+
+room_type_price_summary = (
+    room_type_price_summary
+    .sort_values("listing_count", ascending=False)
+    .round(2)
+)
+
+save_table(room_type_price_summary, "09_room_type_price_summary.csv")
+
+top_common_room_prices = (
+    room_type_price_summary
+    .head(10)
+    .sort_values("median_unit_price_yuan_m2", ascending=False)
+)
+
+save_bar_chart(
+    top_common_room_prices,
+    "room_type",
+    "median_unit_price_yuan_m2",
+    "Median Unit Price by Common Room Type",
+    "Room type",
+    "Median unit price (yuan/m2)",
+    "a5_room_type_unit_price.png",
+    rotation=35
+)
+
+
+# ============================================================
+# 10. Orientation Premium Analysis
+# ============================================================
+
+orientation_summary = (
+    df_clean
+    .groupby("orientation_group", as_index=False)
+    .agg(
+        listing_count=("orientation_group", "size"),
+        median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
+        median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
+        median_area_m2=("area_m2", "median")
+    )
+)
+
+orientation_summary = (
+    orientation_summary
+    .sort_values("median_unit_price_yuan_m2", ascending=False)
+    .round(2)
+)
+
+save_table(orientation_summary, "10_orientation_price_summary.csv")
+
+save_bar_chart(
+    orientation_summary,
+    "orientation_group",
+    "median_unit_price_yuan_m2",
+    "Median Unit Price by Home Orientation",
+    "Orientation",
+    "Median unit price (yuan/m2)",
+    "a6_orientation_unit_price.png"
+)
+
+
+# ============================================================
+# 11. Building Age Effect
+# ============================================================
+
+building_age_summary = (
+    df_clean[df_clean["building_age_group"] != "Unknown"]
+    .groupby("building_age_group", as_index=False)
+    .agg(
+        listing_count=("building_age_group", "size"),
+        median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
+        median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
+        median_area_m2=("area_m2", "median")
+    )
+)
+
+building_age_summary["building_age_group"] = pd.Categorical(
+    building_age_summary["building_age_group"],
+    categories=building_age_labels,
+    ordered=True
+)
+
+building_age_summary = (
+    building_age_summary
+    .sort_values("building_age_group")
+    .round(2)
+)
+
+save_table(building_age_summary, "11_building_age_price_summary.csv")
+
+save_bar_chart(
+    building_age_summary,
+    "building_age_group",
+    "median_unit_price_yuan_m2",
+    "Median Unit Price by Building Age Group",
+    "Building age group",
+    "Median unit price (yuan/m2)",
+    "a7_building_age_unit_price.png"
+)
+
+
+# ============================================================
+# 12. Municipality vs Non-municipality Comparison
+# ============================================================
+
+city_type_summary = (
+    df_clean
+    .groupby("city_type", as_index=False)
+    .agg(
+        listing_count=("city_type", "size"),
+        median_unit_price_yuan_m2=("unit_price_yuan_m2", "median"),
+        median_total_price_10k_yuan=("total_price_10k_yuan", "median"),
+        median_area_m2=("area_m2", "median")
+    )
+)
+
+city_type_summary = city_type_summary.round(2)
+save_table(city_type_summary, "12_city_type_summary.csv")
+
+save_bar_chart(
+    city_type_summary,
+    "city_type",
+    "median_unit_price_yuan_m2",
+    "Municipality vs Non-municipality Median Unit Price",
+    "City type",
+    "Median unit price (yuan/m2)",
+    "a8_municipality_vs_non_municipality.png",
+    rotation=0
+)
+
+
+# ============================================================
+# 13. Project Summary File
+# ============================================================
+
+strongest_price_correlations = (
+    correlation_matrix["total_price_10k_yuan"]
+    .drop(labels=["total_price_10k_yuan"])
+    .abs()
+    .sort_values(ascending=False)
+)
+
+summary_file = OUTPUT_DIR / "13_project_summary.txt"
+
+with open(summary_file, "w", encoding="utf-8") as f:
+    f.write("Real Estate Market Analysis and Value Evaluation\n")
+    f.write("=" * 55 + "\n\n")
+
+    f.write("1. Project Purpose\n")
+    f.write(
+        "This project analyses a real estate dataset to understand housing price "
+        "distribution, key price-related variables, city differences, room type patterns, "
+        "orientation effects, and building age effects.\n\n"
     )
 
-    age_by_segment = price_segment_summary.set_index("price_segment")["median_building_age"]
-    save_bar_chart(
-        age_by_segment,
-        "Median Building Age by Price Segment",
-        "Price segment",
-        "Median building age (years)",
-        "a4_building_age_by_price_segment.png",
-        figsize=(9, 5),
+    f.write("2. Dataset Information\n")
+    f.write(f"Raw dataset shape: {df_raw.shape}\n")
+    f.write(f"Cleaned dataset shape: {df_clean.shape}\n")
+    f.write(f"Current year used for building age calculation: {CURRENT_YEAR}\n\n")
+
+    f.write("3. Cleaning Method\n")
+    f.write(
+        "The cleaning process extracted numeric values from area, total price, "
+        "unit price, room type, floor information, and building year. Rows with missing "
+        "essential fields were removed. Duplicate listing URLs were removed. Extreme or "
+        "unrealistic values were filtered using reasonable value ranges.\n\n"
     )
 
-    # Chart 6: room type analysis
-    top_room_counts = room_type_counts.head(10).set_index("room_type")["listing_count"]
-    save_bar_chart(
-        top_room_counts,
-        "Top 10 Room Types by Listing Count",
-        "Room type",
-        "Number of listings",
-        "a5_top_room_types.png",
-        figsize=(11, 6),
+    f.write("4. Key Descriptive Statistics\n")
+    f.write(numeric_summary.to_string(index=False))
+    f.write("\n\n")
+
+    f.write("5. Strongest Correlations with Total House Price\n")
+    for variable, value in strongest_price_correlations.head(5).items():
+        f.write(f"- {variable}: {value:.3f}\n")
+    f.write("\n")
+
+    f.write("6. Top Cities by Median Unit Price\n")
+    f.write(top_city_unit_prices.to_string(index=False))
+    f.write("\n\n")
+
+    f.write("7. Price Segment Summary\n")
+    f.write(price_segment_summary.to_string(index=False))
+    f.write("\n\n")
+
+    f.write("8. Room Type Summary\n")
+    f.write(room_type_price_summary.head(10).to_string(index=False))
+    f.write("\n\n")
+
+    f.write("9. Orientation Summary\n")
+    f.write(orientation_summary.to_string(index=False))
+    f.write("\n\n")
+
+    f.write("10. Reflection\n")
+    f.write(
+        "This project demonstrates a complete data analysis workflow using Python. "
+        "It includes data loading, cleaning, feature engineering, descriptive statistics, "
+        "correlation analysis, grouped comparison, data visualisation, and written evidence. "
+        "The analysis is suitable for demonstrating practical skills in pandas and matplotlib."
     )
 
-    common_room_types = room_type_price_summary[room_type_price_summary["listing_count"] >= 50].head(10)
-    room_price_series = common_room_types.set_index("room_type")["median_unit_price_yuan_m2"]
-    save_bar_chart(
-        room_price_series,
-        "Median Unit Price by Common Room Type",
-        "Room type",
-        "Median unit price (yuan/m²)",
-        "a5_room_type_unit_price.png",
-        figsize=(11, 6),
-    )
 
-    # Chart 7: orientation and age analysis
-    orientation_series = orientation_summary.set_index("orientation_group")["median_unit_price_yuan_m2"]
-    save_bar_chart(
-        orientation_series,
-        "Median Unit Price by Home Orientation",
-        "Orientation",
-        "Median unit price (yuan/m²)",
-        "a6_orientation_unit_price.png",
-        figsize=(9, 5),
-    )
+# ============================================================
+# 14. Final Output
+# ============================================================
 
-    age_series = building_age_summary.set_index("building_age_group")["median_unit_price_yuan_m2"]
-    save_bar_chart(
-        age_series,
-        "Median Unit Price by Building Age Group",
-        "Building age group",
-        "Median unit price (yuan/m²)",
-        "a7_building_age_unit_price.png",
-        figsize=(10, 5),
-    )
+print("\nProject completed successfully.")
+print(f"All output files have been saved in: {OUTPUT_DIR}")
 
-    # Chart 8: municipality comparison
-    city_type_series = city_type_summary.set_index("city_type")["median_unit_price_yuan_m2"]
-    save_bar_chart(
-        city_type_series,
-        "Median Unit Price: Municipality vs Non-municipality",
-        "City type",
-        "Median unit price (yuan/m²)",
-        "a8_municipality_vs_non_municipality.png",
-        figsize=(7, 5),
-    )
+print("\nGenerated key files:")
 
-    with open(OUTPUT_DIR / "13_project_summary.txt", "w", encoding="utf-8") as f:
-        f.write("Real Estate Market Analysis and Value Evaluation\n")
-        f.write("================================================\n\n")
-        f.write(f"Raw dataset shape: {df_raw.shape}\n")
-        f.write(f"Cleaned dataset shape: {df_clean.shape}\n")
-        f.write("\nCleaning summary:\n")
-        f.write(cleaning_summary.to_string(index=False))
-        f.write("\n\nMain findings:\n")
-        f.write("1. The total price distribution is right-skewed, meaning most listings are in lower and middle price ranges while fewer listings are very expensive.\n")
-        f.write("2. Total price is strongly related to unit price and moderately related to property area.\n")
-        f.write("3. City-level comparison shows clear differences in median unit price across cities.\n")
-        f.write("4. Price segment analysis shows that higher price groups do not only depend on area; location and unit price also influence value.\n")
-        f.write("5. Room type, orientation, building age, and city type provide useful ways to compare housing value patterns.\n")
-        f.write("\nProfessional reflection:\n")
-        f.write("This project helped me practise data cleaning, feature extraction, descriptive analysis, grouped comparison, visualisation, and project documentation.\n")
+generated_files = [
+    "01_raw_dataset_overview.csv",
+    "02_cleaning_summary.csv",
+    "03_cleaned_house_sales.csv",
+    "04_numeric_summary.csv",
+    "05_correlation_matrix.csv",
+    "06_city_price_summary.csv",
+    "07_price_segment_summary.csv",
+    "08_room_type_counts.csv",
+    "09_room_type_price_summary.csv",
+    "10_orientation_price_summary.csv",
+    "11_building_age_price_summary.csv",
+    "12_city_type_summary.csv",
+    "13_project_summary.txt",
+    "a1_correlation_matrix.png",
+    "a2_total_price_distribution.png",
+    "a2_unit_price_boxplot.png",
+    "a3_top_city_unit_prices.png",
+    "a4_median_area_by_price_segment.png",
+    "a4_building_age_by_price_segment.png",
+    "a5_top_room_types.png",
+    "a5_room_type_unit_price.png",
+    "a6_orientation_unit_price.png",
+    "a7_building_age_unit_price.png",
+    "a8_municipality_vs_non_municipality.png"
+]
 
-    print("\nProject completed successfully.")
-    print(f"All output files have been saved in: {OUTPUT_DIR}")
-
-    print("\nGenerated key files:")
-    for name in [
-        "01_raw_dataset_overview.csv",
-        "02_cleaning_summary.csv",
-        "03_cleaned_house_sales.csv",
-        "04_numeric_summary.csv",
-        "05_correlation_matrix.csv",
-        "06_city_price_summary.csv",
-        "07_price_segment_summary.csv",
-        "08_room_type_counts.csv",
-        "09_room_type_price_summary.csv",
-        "10_orientation_price_summary.csv",
-        "11_building_age_price_summary.csv",
-        "12_city_type_summary.csv",
-        "13_project_summary.txt",
-        "a1_correlation_matrix.png",
-        "a2_total_price_distribution.png",
-        "a3_top_city_unit_prices.png",
-        "a5_top_room_types.png",
-        "a8_municipality_vs_non_municipality.png",
-    ]:
-        print(f"- {name}")
-
-
-if __name__ == "__main__":
-    main()
+for file_name in generated_files:
+    print(f"- {file_name}")
