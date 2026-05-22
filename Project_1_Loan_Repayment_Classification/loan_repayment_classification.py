@@ -151,7 +151,6 @@ def main() -> None:
 
     models = {
         "Dummy Baseline": DummyClassifier(strategy="most_frequent"),
-
         "Decision Tree": DecisionTreeClassifier(
             max_depth=6,
             min_samples_leaf=20,
